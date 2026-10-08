@@ -1,13 +1,12 @@
-"""Entry point for My Project Dominion."""
+"""Start the My Project Dominion desktop application."""
 
 from database import initialize_database
+from gui.products import ProductManagementApp
 
 
 def main():
-    category_id = initialize_database()
-    print("My Project Dominion database is ready.")
-    print(f"Default category ID: {category_id}")
-    print("Product and inventory CRUD are available through the models package.")
+    initialize_database()
+    ProductManagementApp().run()
 
 
 if __name__ == "__main__":
