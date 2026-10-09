@@ -7,12 +7,14 @@ class Inventory:
     @staticmethod
     def change_stock(product_id, quantity, movement_type, note=""):
         """Record a stock movement and update the product in one transaction."""
+        # A movement must change stock by a positive whole number.
         if not isinstance(quantity, int) or quantity <= 0:
             raise ValueError("Movement quantity must be a whole number greater than zero.")
         if movement_type not in ("IN", "OUT"):
             raise ValueError("Movement type must be 'IN' or 'OUT'.")
 
         with get_connection() as connection:
+            # Read the current balance before calculating its new value.
             product = connection.execute(
                 "SELECT quantity FROM products WHERE product_id = ?", (product_id,)
             ).fetchone()
@@ -23,6 +25,7 @@ class Inventory:
                 raise ValueError("Cannot remove more stock than is currently available.")
             new_quantity = (current_quantity + quantity if movement_type == "IN"
                             else current_quantity - quantity)
+            # The balance and its history are saved together as one transaction.
             connection.execute(
                 "UPDATE products SET quantity = ? WHERE product_id = ?",
                 (new_quantity, product_id),

@@ -2,8 +2,9 @@
 
 import sqlite3
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 
+from models.inventory import Inventory
 from models.product import Product
 
 
@@ -11,8 +12,8 @@ class ProductManagementApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("My Project Dominion - Products")
-        self.root.geometry("850x560")
-        self.root.minsize(720, 480)
+        self.root.geometry("980x650")
+        self.root.minsize(800, 560)
         self.selected_product_id = None
 
         self._build_screen()
@@ -23,9 +24,13 @@ class ProductManagementApp:
         page = ttk.Frame(self.root, padding=16)
         page.pack(fill="both", expand=True)
 
-        ttk.Label(page, text="Product Management", font=("Segoe UI", 18, "bold")).pack(
-            anchor="w", pady=(0, 10)
+        header = ttk.Frame(page)
+        header.pack(fill="x", pady=(0, 10))
+        ttk.Label(header, text="Product Management", font=("Segoe UI", 18, "bold")).pack(
+            side="left"
         )
+        self.low_stock_summary = ttk.Label(header, text="")
+        self.low_stock_summary.pack(side="right")
 
         search_row = ttk.Frame(page)
         search_row.pack(fill="x", pady=(0, 10))
@@ -34,10 +39,15 @@ class ProductManagementApp:
         search_box = ttk.Entry(search_row, textvariable=self.search_text, width=36)
         search_box.pack(side="left", padx=(8, 0))
         self.search_text.trace_add("write", self._search_changed)
+        self.low_stock_only = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            search_row, text="Show low-stock only", variable=self.low_stock_only,
+            command=self.refresh_products,
+        ).pack(side="left", padx=(18, 0))
 
         table_frame = ttk.Frame(page)
         table_frame.pack(fill="both", expand=True)
-        columns = ("sku", "name", "price", "quantity", "threshold")
+        columns = ("sku", "name", "price", "quantity", "threshold", "status")
         self.product_table = ttk.Treeview(
             table_frame, columns=columns, show="headings", selectmode="browse"
         )
@@ -45,6 +55,7 @@ class ProductManagementApp:
             "sku": ("SKU", 120), "name": ("Product name", 230),
             "price": ("Price", 100), "quantity": ("Quantity", 100),
             "threshold": ("Low-stock level", 130),
+            "status": ("Stock status", 120),
         }
         for column, (label, width) in headings.items():
             self.product_table.heading(column, text=label)
@@ -55,6 +66,8 @@ class ProductManagementApp:
         self.product_table.configure(yscrollcommand=scrollbar.set)
         self.product_table.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+        # A colored status makes low stock visible without opening another screen.
+        self.product_table.tag_configure("low_stock", foreground="#b42318")
         self.product_table.bind("<<TreeviewSelect>>", self._product_selected)
 
         form = ttk.LabelFrame(page, text="Product details", padding=10)
@@ -87,6 +100,12 @@ class ProductManagementApp:
         ttk.Button(buttons, text="Delete selected", command=self.delete_product).pack(
             side="left"
         )
+        ttk.Button(buttons, text="Stock in", command=lambda: self.change_selected_stock("IN")).pack(
+            side="left", padx=(18, 4)
+        )
+        ttk.Button(buttons, text="Stock out", command=lambda: self.change_selected_stock("OUT")).pack(
+            side="left"
+        )
         ttk.Button(buttons, text="Clear form", command=self.clear_form).pack(side="right")
 
     def _search_changed(self, *_):
@@ -94,15 +113,24 @@ class ProductManagementApp:
         self.refresh_products()
 
     def refresh_products(self):
-        """Show products matching the search field."""
+        """Show matching products and update the low-stock count."""
         for item in self.product_table.get_children():
             self.product_table.delete(item)
-        for product in Product.get_all(self.search_text.get()):
+        search = self.search_text.get()
+        # The checkbox switches between the full list and just products needing attention.
+        products = (Product.get_low_stock(search) if self.low_stock_only.get()
+                    else Product.get_all(search))
+        for product in products:
+            is_low = product.quantity <= product.low_stock_threshold
             self.product_table.insert(
                 "", "end", iid=str(product.product_id),
                 values=(product.sku, product.name, f"{product.price:.2f}",
-                        product.quantity, product.low_stock_threshold),
+                        product.quantity, product.low_stock_threshold,
+                        "LOW STOCK" if is_low else "In stock"),
+                tags=("low_stock",) if is_low else (),
             )
+        low_count = len(Product.get_low_stock())
+        self.low_stock_summary.configure(text=f"Low-stock products: {low_count}")
 
     def _product_selected(self, _event):
         """Copy the selected table row into the form for editing."""
@@ -173,6 +201,43 @@ class ProductManagementApp:
             return
         self.clear_form()
         self.refresh_products()
+
+    def change_selected_stock(self, movement_type):
+        """Ask how many units moved, then save the stock change and its history."""
+        if self.selected_product_id is None:
+            messagebox.showwarning("Select a product", "Choose a product in the table first.",
+                                   parent=self.root)
+            return
+
+        action = "add to stock" if movement_type == "IN" else "remove from stock"
+        # Canceling this dialog leaves the product unchanged.
+        quantity = simpledialog.askinteger(
+            "Stock movement", f"How many units do you want to {action}?",
+            minvalue=1, parent=self.root,
+        )
+        if quantity is None:
+            return
+        note = simpledialog.askstring(
+            "Movement note", "Add an optional note for this stock movement:",
+            parent=self.root,
+        )
+        if note is None:
+            note = ""
+
+        try:
+            new_quantity = Inventory.change_stock(
+                self.selected_product_id, quantity, movement_type, note
+            )
+        except ValueError as error:
+            messagebox.showerror("Stock was not changed", str(error), parent=self.root)
+            return
+
+        # Refresh the table so the new balance and low-stock status appear immediately.
+        self.refresh_products()
+        messagebox.showinfo(
+            "Stock updated", f"The new available quantity is {new_quantity}.",
+            parent=self.root,
+        )
 
     def clear_form(self):
         """Clear the fields and forget which product was selected."""

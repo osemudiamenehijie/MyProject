@@ -17,6 +17,7 @@ class Product:
 
     @staticmethod
     def _validate(sku, name, price, quantity, low_stock_threshold):
+        # Check the form values before trying to save them in SQLite.
         if not sku or not sku.strip():
             raise ValueError("SKU cannot be blank.")
         if not name or not name.strip():
@@ -58,11 +59,26 @@ class Product:
     @classmethod
     def get_all(cls, search=""):
         """Return all products, optionally searching SKU or name."""
+        # The percent signs let the search match text anywhere in the SKU or name.
         search_text = f"%{search.strip()}%"
         with get_connection() as connection:
             rows = connection.execute(
                 """SELECT * FROM products
                    WHERE sku LIKE ? OR name LIKE ?
+                   ORDER BY name""",
+                (search_text, search_text),
+            ).fetchall()
+            return [cls._from_row(row) for row in rows]
+
+    @classmethod
+    def get_low_stock(cls, search=""):
+        """Return products whose quantity is at or below their warning level."""
+        search_text = f"%{search.strip()}%"
+        with get_connection() as connection:
+            rows = connection.execute(
+                """SELECT * FROM products
+                   WHERE quantity <= low_stock_threshold
+                     AND (sku LIKE ? OR name LIKE ?)
                    ORDER BY name""",
                 (search_text, search_text),
             ).fetchall()
