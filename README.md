@@ -23,7 +23,8 @@ The project uses Python, Tkinter, and SQLite. Tkinter and SQLite are included wi
 - October 7: product and inventory classes, SQLite schema, and CRUD operations.
 - October 8: product management window with live search by SKU or name.
 - October 9: stock-in/stock-out controls, movement notes, and low-stock filtering.
-- October 10–14: remaining milestones are listed in `docs/project_schedule.md`.
+- October 10: sales checkout with automatic stock reduction.
+- October 11–14: remaining milestones are listed in `docs/project_schedule.md`.
 
 ## Run
 
@@ -37,7 +38,7 @@ The database is created automatically at `database/dominion.db` when the applica
 
 ## Current scope
 
-The current implementation covers product management, product search, stock-in/stock-out records, and a low-stock view. Sales, reports, and CSV export are later milestones.
+The current implementation covers product management, product search, stock-in/stock-out records, a low-stock view, and sale recording with automatic stock reduction. Sales reports and CSV export are later milestones.
 
 ## Requirements and design
 
